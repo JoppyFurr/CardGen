@@ -97,6 +97,8 @@ static int export (Image *i, const char *path)
 }
 
 #define COLOUR_WHITE 255, 255, 255
+#define COLOUR_BLACK   0,   0,   0
+
 void colour_set (Image *i, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b)
 {
     Pixel *p = pixel_get (i, x, y);
@@ -105,11 +107,12 @@ void colour_set (Image *i, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t
     p->b = b;
 }
 
+#define CARD_WIDTH  40
+#define CARD_HEIGHT 64
+
 int main (int argc, char**argv)
 {
     Image image;
-    uint32_t x;
-    uint32_t y;
 
     /* Create an image */
     image.width = 1024;
@@ -122,13 +125,38 @@ int main (int argc, char**argv)
     }
 
     /* Initialize to white */
-    for (y = 0; y < image.height; y++)
+    for (uint32_t y = 0; y < image.height; y++)
     {
-        for (x = 0; x < image.width; x++)
+        for (uint32_t x = 0; x < image.width; x++)
         {
             colour_set (&image, x, y, COLOUR_WHITE);
         }
     }
+
+    for (uint32_t card_col = 0; card_col < 16; card_col++)
+    {
+        for (uint32_t card_row= 0; card_row < 4; card_row++)
+        {
+            /* Top and bottom */
+            for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
+            {
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                    0 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                   63 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+            }
+            /* Left and right */
+            for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+            {
+                colour_set (&image, 0 + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, COLOUR_BLACK);
+                colour_set (&image,39 + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, COLOUR_BLACK);
+            }
+        }
+    }
+
+    /* Card borders */
 
     export (&image, "cards.png");
 

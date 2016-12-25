@@ -7,6 +7,7 @@ typedef struct pixel_t {
     uint8_t r;
     uint8_t g;
     uint8_t b;
+    uint8_t a;
 } Pixel;
 
 typedef struct image_t {
@@ -29,7 +30,7 @@ static int export (Image *i, const char *path)
     uint32_t x, y;
     png_byte ** row_pointers = NULL;
 
-    int pixel_size = 3;
+    int pixel_size = 4;
     int depth = 8;
 
     if (!file)
@@ -55,7 +56,7 @@ static int export (Image *i, const char *path)
 
     /* Set image attributes */
     png_set_IHDR (png_ptr, info_ptr, i->width, i->height, depth,
-                  PNG_COLOR_TYPE_RGB,
+                  PNG_COLOR_TYPE_RGBA,
                   PNG_INTERLACE_NONE,
                   PNG_COMPRESSION_TYPE_DEFAULT,
                   PNG_FILTER_TYPE_DEFAULT);
@@ -78,6 +79,7 @@ static int export (Image *i, const char *path)
             *row++ = p->r;
             *row++ = p->g;
             *row++ = p->b;
+            *row++ = p->a;
         }
     }
 
@@ -105,6 +107,16 @@ void colour_set (Image *i, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t
     p->r = r;
     p->g = g;
     p->b = b;
+    p->a = 255;
+}
+
+void transparent_set (Image *i, uint32_t x, uint32_t y)
+{
+    Pixel *p = pixel_get (i, x, y);
+    p->r = 0;
+    p->g = 0;
+    p->b = 0;
+    p->a = 0;
 }
 
 #define CARD_WIDTH  40
@@ -129,7 +141,7 @@ int main (int argc, char**argv)
     {
         for (uint32_t x = 0; x < image.width; x++)
         {
-            colour_set (&image, x, y, COLOUR_WHITE);
+            transparent_set (&image, x, y);
         }
     }
 
@@ -152,6 +164,15 @@ int main (int argc, char**argv)
                                     y + card_row * CARD_HEIGHT, COLOUR_BLACK);
                 colour_set (&image,39 + card_col * CARD_WIDTH,
                                     y + card_row * CARD_HEIGHT, COLOUR_BLACK);
+            }
+            /* White cards */
+            for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
+            {
+                for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+                {
+                    colour_set (&image, x + card_col * CARD_WIDTH,
+                                        y + card_row * CARD_HEIGHT, COLOUR_WHITE);
+                }
             }
         }
     }

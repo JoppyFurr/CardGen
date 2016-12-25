@@ -124,6 +124,8 @@ void transparent_set (Image *i, uint32_t x, uint32_t y)
 
 #define CARD_WIDTH  40
 #define CARD_HEIGHT 64
+#define TEXT_TOP 5
+#define TEXT_LEFT 5
 
 static char letters[] = {'A', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'J', 'Q', 'K'};
 
@@ -149,7 +151,7 @@ int main (int argc, char**argv)
     }
 
     /* Set the font size */
-    if (FT_Set_Char_Size (ft_face, 0, 9*64,  /* 9 pt */
+    if (FT_Set_Char_Size (ft_face, 0, 7*64,  /* 7 pt */
                                   96, 96    /* 96 dpi */))
     {
         fprintf (stderr, "Error: Unable to set font size.\n");
@@ -222,11 +224,21 @@ int main (int argc, char**argv)
                 {
                     for (uint32_t y = 0; y < ft_face->glyph->bitmap.rows; y++)
                     {
-                        colour_set (&image, x + card_col * CARD_WIDTH  + 5,
-                                            y + card_row * CARD_HEIGHT + 5,
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[x + y * ft_face->glyph->bitmap.pitch],
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[x + y * ft_face->glyph->bitmap.pitch],
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[x + y * ft_face->glyph->bitmap.pitch]);
+                        uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
+                        /* Top left */
+                        colour_set (&image, card_col * CARD_WIDTH + x + TEXT_LEFT,
+                                            card_row * CARD_HEIGHT + y + TEXT_TOP,
+                                            card_row < 2 ?
+                                                255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
+                        /* Bottom right */
+                        colour_set (&image, card_col * CARD_WIDTH + (CARD_WIDTH - (x + TEXT_LEFT)),
+                                            card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + TEXT_TOP)),
+                                            card_row < 2 ?
+                                            255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
                     }
                 }
             }

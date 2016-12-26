@@ -1,10 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <png.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+
+#define COLOUR_WHITE 255, 255, 255
+#define COLOUR_BLACK   0,   0,   0
+#define CARD_WIDTH  40
+#define CARD_HEIGHT 64
+#define TEXT_TOP 4
+#define TEXT_LEFT 4
 
 typedef struct pixel_t {
     uint8_t r;
@@ -18,6 +26,13 @@ typedef struct image_t {
     uint32_t width;
     uint32_t height;
 } Image;
+
+static Image image;
+static FT_Library ft_library;
+static FT_Face ft_face;
+static char *card_values[] = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+static uint32_t card_suits[]  = {0x2665 /* ♥ */, 0x2666 /* ♦ */, 0x2663 /* ♣ */, 0x2660 /* ♠*/};
+
 
 static Pixel *pixel_get (Image *i, uint32_t x, uint32_t y)
 {
@@ -101,9 +116,6 @@ static int export (Image *i, const char *path)
     return EXIT_SUCCESS;
 }
 
-#define COLOUR_WHITE 255, 255, 255
-#define COLOUR_BLACK   0,   0,   0
-
 void colour_set (Image *i, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b)
 {
     Pixel *p = pixel_get (i, x, y);
@@ -122,21 +134,60 @@ void transparent_set (Image *i, uint32_t x, uint32_t y)
     p->a = 0;
 }
 
-#define CARD_WIDTH  40
-#define CARD_HEIGHT 64
-#define TEXT_TOP 5
-#define TEXT_LEFT 5
+uint32_t glyph_draw (uint32_t card_col, uint32_t card_row, uint32_t x_offset, uint32_t y_offset,
+                     uint32_t font_size, uint32_t c, bool mirror)
+{
+    /* Possibly useful fields:
+     * glyph->bitmap_left,
+     * glyph->bitmap_top (distance from baseline to top of character,
+     * Docs reccomend treating the bitmap as an alpha channel and blending with gamma correction */
+    /* Set the font size */
+    if (FT_Set_Char_Size (ft_face, 0, font_size << 6,
+                                  96, 96    /* 96 dpi */))
+    {
+        fprintf (stderr, "Error: Unable to set font size.\n");
+        return EXIT_FAILURE;
+    }
 
-static char letters[] = {'A', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'J', 'Q', 'K'};
+    if (FT_Load_Char (ft_face, c, FT_LOAD_RENDER))
+    {
+        fprintf (stderr, "Error: Unable to set load glyph.\n");
+        return EXIT_FAILURE;
+    }
+
+    for (uint32_t x = 0; x < ft_face->glyph->bitmap.width; x++)
+    {
+        for (uint32_t y = 0; y < ft_face->glyph->bitmap.rows; y++)
+        {
+            uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
+            /* Top left */
+            colour_set (&image, card_col * CARD_WIDTH + x + x_offset,
+                                card_row * CARD_HEIGHT + y + y_offset,
+                                card_row < 2 ?
+                                    255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
+            if (mirror)
+            {
+                /* Bottom right */
+                colour_set (&image, card_col * CARD_WIDTH  + (CARD_WIDTH  - (x + x_offset)),
+                                    card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_offset)),
+                                    card_row < 2 ?
+                                    255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                    255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
+                                    255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
+            }
+        }
+    }
+
+    return ft_face->glyph->advance.x >> 6; /* Advance is stored in 1/64th pixels */
+}
 
 int main (int argc, char**argv)
 {
-    Image image;
+
 
     /* Initialize FreeType2 */
-    FT_Library ft_library;
-    FT_Face    ft_face;
-
     if (FT_Init_FreeType (&ft_library))
     {
         fprintf (stderr, "Error: Unable to initialize FreeType2.\n");
@@ -144,17 +195,10 @@ int main (int argc, char**argv)
     }
 
     /* Load the font */
+    /* TODO: Is there a nice bitmap font we could use that includes the card symbols? */
     if (FT_New_Face (ft_library, "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", 0, &ft_face))
     {
         fprintf (stderr, "Error: Unable to load font.\n");
-        return EXIT_FAILURE;
-    }
-
-    /* Set the font size */
-    if (FT_Set_Char_Size (ft_face, 0, 7*64,  /* 7 pt */
-                                  96, 96    /* 96 dpi */))
-    {
-        fprintf (stderr, "Error: Unable to set font size.\n");
         return EXIT_FAILURE;
     }
 
@@ -208,39 +252,19 @@ int main (int argc, char**argv)
                 }
             }
             /* A letter or number in the top corner */
-            /* glyph->bitmap_left,
-             * glyph->bitmap_top (distance from baseline to top of character,
-             * glyph->advance (increase in pen position, 'escapement')
-             * Docs reccomend treating the bitmap as an alpha channel and blending with gamma correction */
-            if (card_col < sizeof(letters))
+            if (card_col < sizeof(card_values) / sizeof(card_values[0]))
             {
-                if (FT_Load_Char (ft_face, (uint32_t) letters[card_col], FT_LOAD_RENDER))
-                {
-                    fprintf (stderr, "Error: Unable to set load glyph.\n");
-                    return EXIT_FAILURE;
-                }
+                uint32_t escapement = 0;
 
-                for (uint32_t x = 0; x < ft_face->glyph->bitmap.width; x++)
+                for (char *c = card_values[card_col]; *c != '\0'; c++)
                 {
-                    for (uint32_t y = 0; y < ft_face->glyph->bitmap.rows; y++)
-                    {
-                        uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
-                        /* Top left */
-                        colour_set (&image, card_col * CARD_WIDTH + x + TEXT_LEFT,
-                                            card_row * CARD_HEIGHT + y + TEXT_TOP,
-                                            card_row < 2 ?
-                                                255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
-                        /* Bottom right */
-                        colour_set (&image, card_col * CARD_WIDTH + (CARD_WIDTH - (x + TEXT_LEFT)),
-                                            card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + TEXT_TOP)),
-                                            card_row < 2 ?
-                                            255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                            255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
-                    }
+                    escapement += glyph_draw (card_col, card_row, TEXT_LEFT + escapement, TEXT_TOP, 8, *c, true);
                 }
+            }
+            /* Card symbols - TODO: Get these to line up with the number */
+            if (card_col < sizeof(card_values) / sizeof(card_values[0]))
+            {
+                 glyph_draw (card_col, card_row, TEXT_LEFT, TEXT_TOP + 10, 9, card_suits[card_row], true);
             }
 
         }

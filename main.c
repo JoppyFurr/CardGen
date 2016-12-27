@@ -213,7 +213,7 @@ int main (int argc, char**argv)
         return EXIT_FAILURE;
     }
 
-    /* Initialize to white */
+    /* Initialize to transparent */
     for (uint32_t y = 0; y < image.height; y++)
     {
         for (uint32_t x = 0; x < image.width; x++)
@@ -227,7 +227,7 @@ int main (int argc, char**argv)
         for (uint32_t card_row= 0; card_row < 4; card_row++)
         {
             /* Top and bottom */
-            for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
+            for (uint32_t x = 2; x < CARD_WIDTH - 2; x++)
             {
                 colour_set (&image, x + card_col * CARD_WIDTH,
                                     0 + card_row * CARD_HEIGHT, COLOUR_BLACK);
@@ -235,7 +235,7 @@ int main (int argc, char**argv)
                                    63 + card_row * CARD_HEIGHT, COLOUR_BLACK);
             }
             /* Left and right */
-            for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+            for (uint32_t y = 2; y < CARD_HEIGHT - 2; y++)
             {
                 colour_set (&image, 0 + card_col * CARD_WIDTH,
                                     y + card_row * CARD_HEIGHT, COLOUR_BLACK);
@@ -251,6 +251,17 @@ int main (int argc, char**argv)
                                         y + card_row * CARD_HEIGHT, COLOUR_WHITE);
                 }
             }
+            /* Curved corner fixup */
+            colour_set (&image, 1 + card_col * CARD_WIDTH,
+                                1 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+
+            colour_set (&image, 1 + card_col * CARD_WIDTH,
+                                CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+            colour_set (&image, CARD_WIDTH - 2 + card_col * CARD_WIDTH,
+                                1 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+            colour_set (&image, CARD_WIDTH - 2 + card_col * CARD_WIDTH,
+                                CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+
             /* A letter or number in the top corner */
             if (card_col < sizeof(card_values) / sizeof(card_values[0]))
             {

@@ -242,15 +242,20 @@ int main (int argc, char**argv)
                 colour_set (&image,39 + card_col * CARD_WIDTH,
                                     y + card_row * CARD_HEIGHT, COLOUR_BLACK);
             }
-            /* White cards */
-            for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
+
+            /* White backgrounds for playing cards */
+            if (card_col < 13)
             {
-                for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+                for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
                 {
-                    colour_set (&image, x + card_col * CARD_WIDTH,
-                                        y + card_row * CARD_HEIGHT, COLOUR_WHITE);
+                    for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+                    {
+                        colour_set (&image, x + card_col * CARD_WIDTH,
+                                            y + card_row * CARD_HEIGHT, COLOUR_WHITE);
+                    }
                 }
             }
+
             /* Curved corner fixup */
             colour_set (&image, 1 + card_col * CARD_WIDTH,
                                 1 + card_row * CARD_HEIGHT, COLOUR_BLACK);

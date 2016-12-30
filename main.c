@@ -2,19 +2,25 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 #include <png.h>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-#define COLOUR_WHITE 255, 255, 255
-#define COLOUR_BLACK   0,   0,   0
-#define COLOUR_SKY   128, 128, 255
-#define COLOUR_CYAN    0, 255, 255
 #define CARD_WIDTH  40
 #define CARD_HEIGHT 64
 #define TEXT_TOP 4
 #define TEXT_LEFT 4
+
+#define TEXT_POINT 8
+#define SUIT_POINT 9
+
+typedef struct Colour_t {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+} Colour;
 
 typedef struct pixel_t {
     uint8_t r;
@@ -28,6 +34,13 @@ typedef struct image_t {
     uint32_t width;
     uint32_t height;
 } Image;
+
+static const Colour COLOUR_WHITE = {255, 255, 255};
+static const Colour COLOUR_BLACK = {  0,   0,   0};
+static const Colour COLOUR_RED   = {255,   0,   0};
+static const Colour COLOUR_GREEN = {  0, 255,   0};
+static const Colour COLOUR_SKY   = {128, 128, 255};
+static const Colour COLOUR_CYAN  = {  0, 255, 255};
 
 static Image image;
 static FT_Library ft_library;
@@ -119,13 +132,33 @@ static int export (Image *i, const char *path)
     return EXIT_SUCCESS;
 }
 
-void colour_set (Image *i, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b)
+void colour_set (Image *i, uint32_t x, uint32_t y, Colour c)
 {
     Pixel *p = pixel_get (i, x, y);
-    p->r = r;
-    p->g = g;
-    p->b = b;
+    p->r = c.r;
+    p->g = c.g;
+    p->b = c.b;
     p->a = 255;
+}
+
+/* Assumes the existing pixel has alpha of either 0 or 255 */
+void draw_colour_over (Image *i, uint32_t x, uint32_t y, Colour c, uint8_t a)
+{
+    double a_float = a / 255.0;
+    Pixel *p = pixel_get (i, x, y);
+    if (p->a) /* Opaque target */
+    {
+        p->r = (1.0 - a_float) * p->r + a_float * c.r;
+        p->g = (1.0 - a_float) * p->r + a_float * c.g;
+        p->b = (1.0 - a_float) * p->r + a_float * c.b;
+    }
+    else /* Transparent target */
+    {
+        p->r = c.r;
+        p->g = c.g;
+        p->b = c.b;
+        p->a = a;
+    }
 }
 
 void transparent_set (Image *i, uint32_t x, uint32_t y)
@@ -137,8 +170,8 @@ void transparent_set (Image *i, uint32_t x, uint32_t y)
     p->a = 0;
 }
 
-uint32_t glyph_draw (uint32_t card_col, uint32_t card_row, uint32_t x_offset, uint32_t y_offset,
-                     FT_Face ft_face, uint32_t font_size, uint32_t c, bool mirror)
+uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offset, uint32_t y_offset,
+                     FT_Face ft_face, uint32_t font_size, Colour colour, uint32_t c, bool mirror)
 {
     /* Possibly useful fields:
      * glyph->bitmap_left,
@@ -164,21 +197,15 @@ uint32_t glyph_draw (uint32_t card_col, uint32_t card_row, uint32_t x_offset, ui
         {
             uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
             /* Top left */
-            colour_set (&image, card_col * CARD_WIDTH + x + x_offset,
-                                card_row * CARD_HEIGHT + y + y_offset,
-                                card_row < 2 ?
-                                    255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
+            draw_colour_over (&image, card_col * CARD_WIDTH + x + x_offset,
+                                      card_row * CARD_HEIGHT + y + y_offset,
+                                      colour, ft_face->glyph->bitmap.buffer[pixel_index]);
             if (mirror)
             {
                 /* Bottom right */
-                colour_set (&image, card_col * CARD_WIDTH  + (CARD_WIDTH  - (x + x_offset)),
-                                    card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_offset)),
-                                    card_row < 2 ?
-                                    255 : 255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                    255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                    255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
+                draw_colour_over (&image, card_col * CARD_WIDTH  + (CARD_WIDTH  - (x + x_offset)),
+                                          card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_offset)),
+                                          colour, ft_face->glyph->bitmap.buffer[pixel_index]);
             }
         }
     }
@@ -186,7 +213,7 @@ uint32_t glyph_draw (uint32_t card_col, uint32_t card_row, uint32_t x_offset, ui
     return ft_face->glyph->advance.x >> 6; /* Advance is stored in 1/64th pixels */
 }
 
-uint32_t glyph_draw_centre (uint32_t card_col, uint32_t card_row, FT_Face ft_face, uint32_t font_size, uint32_t c)
+uint32_t draw_card_glyph_centre (uint32_t card_col, uint32_t card_row, FT_Face ft_face, uint32_t font_size, Colour colour, uint32_t c)
 {
     /* Possibly useful fields:
      * glyph->bitmap_left,
@@ -215,20 +242,27 @@ uint32_t glyph_draw_centre (uint32_t card_col, uint32_t card_row, FT_Face ft_fac
         for (uint32_t y = 0; y < ft_face->glyph->bitmap.rows; y++)
         {
             uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
-            /* TODO: Fix this hack… Green because only the refresh button uses this at the moment */
-            /* TODO: It'd be nice to render this to transparency… We may need to do the alpha blending the library asks for. */
-            colour_set (&image, card_col * CARD_WIDTH + x + x_offset,
-                                card_row * CARD_HEIGHT + y + y_offset,
-                                255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index],
-                                255,
-                                255 - (uint8_t)ft_face->glyph->bitmap.buffer[pixel_index]);
+            draw_colour_over (&image, card_col * CARD_WIDTH + x + x_offset,
+                                      card_row * CARD_HEIGHT + y + y_offset,
+                                      colour, ft_face->glyph->bitmap.buffer[pixel_index]);
         }
     }
 
     return ft_face->glyph->advance.x >> 6; /* Advance is stored in 1/64th pixels */
 }
+void draw_card_background (uint32_t card_col, uint32_t card_row)
+{
+    for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
+    {
+        for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+        {
+            colour_set (&image, x + card_col * CARD_WIDTH,
+                                y + card_row * CARD_HEIGHT, COLOUR_WHITE);
+        }
+    }
+}
 
-void draw_outline (uint32_t card_col, uint32_t card_row)
+void draw_card_outline (uint32_t card_col, uint32_t card_row)
 {
             /* Top and bottom */
             for (uint32_t x = 2; x < CARD_WIDTH - 2; x++)
@@ -270,7 +304,6 @@ int main (int argc, char**argv)
     }
 
     /* Load the font */
-    /* TODO: Is there a nice bitmap font we could use that includes the card symbols? */
     if (FT_New_Face (ft_library, "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", 0, &ft_face_text))
     {
         fprintf (stderr, "Error: Unable to load text font.\n");
@@ -302,25 +335,14 @@ int main (int argc, char**argv)
         }
     }
 
+    /* A 13 × 4 block of playing cards */
     for (uint32_t card_col = 0; card_col < 13; card_col++)
     {
         for (uint32_t card_row= 0; card_row < 4; card_row++)
         {
+            draw_card_background (card_col, card_row);
 
-            /* White backgrounds for playing cards */
-            if (card_col < 13)
-            {
-                for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
-                {
-                    for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
-                    {
-                        colour_set (&image, x + card_col * CARD_WIDTH,
-                                            y + card_row * CARD_HEIGHT, COLOUR_WHITE);
-                    }
-                }
-            }
-
-            draw_outline (card_col, card_row);
+            draw_card_outline (card_col, card_row);
 
             /* A letter or number in the top corner */
             if (card_col < sizeof(card_values) / sizeof(card_values[0]))
@@ -329,67 +351,67 @@ int main (int argc, char**argv)
 
                 for (char *c = card_values[card_col]; *c != '\0'; c++)
                 {
-                    escapement += glyph_draw (card_col, card_row, TEXT_LEFT + escapement, TEXT_TOP, ft_face_text, 8, *c, true);
+                    escapement += draw_card_glyph (card_col, card_row, TEXT_LEFT + escapement, TEXT_TOP, /* Position */
+                                                   ft_face_text, TEXT_POINT, card_row < 2 ? COLOUR_RED : COLOUR_BLACK, /* Font */
+                                                   *c, true); /* Glyph + mirror */
                 }
             }
-            /* Card symbols - TODO: Get these to line up with the number */
+            /* Card symbols - TODO: Get these to line up with the number, or beside the number */
             if (card_col < sizeof(card_values) / sizeof(card_values[0]))
             {
-                 glyph_draw (card_col, card_row, TEXT_LEFT, TEXT_TOP + 10, ft_face_text, 9, card_suits[card_row], true);
+                 draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_TOP + 10, /* Position */
+                                  ft_face_text, SUIT_POINT, card_row < 2 ? COLOUR_RED : COLOUR_BLACK, /* font */
+                                  card_suits[card_row], true); /* Glyph + mirror */
             }
 
         }
+    }
 
-        /* After the first 13×4 block of cards, we add special cards */
-        /* 1: Blank - An outline that can be used as a place holder */
+    /* Special cards */
+    /* 1: Blank - An outline that can be used as a place holder */
+    {
+        uint32_t card_col = 13;
+        uint32_t card_row = 0;
+        draw_card_outline (card_col, card_row);
+    }
+    /* 2: A recycle symbol for when the stock runs dry */
+    {
+        uint32_t card_col = 13;
+        uint32_t card_row = 1;
+        draw_card_outline (card_col, card_row);
+        draw_card_glyph_centre (card_col, card_row, ft_face_symbol, 24, COLOUR_GREEN, 0x21b6 /* refresh symbol */);
+    }
+    /* 3: The back of a card */
+    {
+        uint32_t card_col = 13;
+        uint32_t card_row = 2;
+
+        draw_card_background (card_col, card_row);
+
+        draw_card_outline (card_col, card_row);
+
+        /* Blue rectangle pattern */
+        for (uint32_t x = 4; x < CARD_WIDTH - 4; x++)
         {
-            uint32_t card_col = 13;
-            uint32_t card_row = 0;
-            draw_outline (card_col, card_row);
-        }
-        /* 2: A recycle symbol for when the stock runs dry */
-        {
-            uint32_t card_col = 13;
-            uint32_t card_row = 1;
-            draw_outline (card_col, card_row);
-            /* TODO: Centre properly and make green */
-            glyph_draw_centre (card_col, card_row, ft_face_symbol, 24, 0x21b6 /* refresh symbol */);
-        }
-        /* 3: The back of a card */
-        {
-            uint32_t card_col = 13;
-            uint32_t card_row = 2;
-            /* White background */ /* TODO: Move "White background" to a re-usable function */
-            for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
+            for (uint32_t y = 4; y < CARD_HEIGHT - 4; y++)
             {
-                for (uint32_t y = 1; y < CARD_HEIGHT - 1; y++)
+                if ((x + y) & 1)
                 {
                     colour_set (&image, x + card_col * CARD_WIDTH,
-                                        y + card_row * CARD_HEIGHT, COLOUR_WHITE);
+                                        y + card_row * CARD_HEIGHT, COLOUR_SKY);
                 }
-            }
-
-            draw_outline (card_col, card_row);
-
-            /* Blue rectangle pattern */
-            /* TODO: Should the corners be rounded a little? */
-            for (uint32_t x = 4; x < CARD_WIDTH - 4; x++)
-            {
-                for (uint32_t y = 4; y < CARD_HEIGHT - 4; y++)
+                else
                 {
-                    if ((x + y) & 1)
-                    {
-                        colour_set (&image, x + card_col * CARD_WIDTH,
-                                            y + card_row * CARD_HEIGHT, COLOUR_SKY);
-                    }
-                    else
-                    {
-                        colour_set (&image, x + card_col * CARD_WIDTH,
-                                            y + card_row * CARD_HEIGHT, COLOUR_CYAN);
-                    }
+                    colour_set (&image, x + card_col * CARD_WIDTH,
+                                        y + card_row * CARD_HEIGHT, COLOUR_CYAN);
                 }
             }
         }
+        /* Round the corners */
+        colour_set (&image, 4 + card_col * CARD_WIDTH, 4 + card_row * CARD_HEIGHT, COLOUR_WHITE);
+        colour_set (&image, CARD_WIDTH - 5 + card_col * CARD_WIDTH, 4 + card_row * CARD_HEIGHT, COLOUR_WHITE);
+        colour_set (&image, 4 + card_col * CARD_WIDTH, CARD_HEIGHT - 5 + card_row * CARD_HEIGHT, COLOUR_WHITE);
+        colour_set (&image, CARD_WIDTH - 5 + card_col * CARD_WIDTH, CARD_HEIGHT - 5 + card_row * CARD_HEIGHT, COLOUR_WHITE);
     }
 
     export (&image, "cards.png");

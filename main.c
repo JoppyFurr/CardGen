@@ -10,7 +10,7 @@
 
 #define CARD_WIDTH  40
 #define CARD_HEIGHT 64
-#define TEXT_TOP 4
+#define TEXT_BASELINE 12
 #define TEXT_LEFT 4
 
 #define TEXT_POINT 8
@@ -35,12 +35,14 @@ typedef struct image_t {
     uint32_t height;
 } Image;
 
-static const Colour COLOUR_WHITE = {255, 255, 255};
-static const Colour COLOUR_BLACK = {  0,   0,   0};
-static const Colour COLOUR_RED   = {255,   0,   0};
-static const Colour COLOUR_GREEN = {  0, 255,   0};
-static const Colour COLOUR_SKY   = {128, 128, 255};
-static const Colour COLOUR_CYAN  = {  0, 255, 255};
+static const Colour COLOUR_WHITE        = {255, 255, 255};
+static const Colour COLOUR_BLACK        = {  0,   0,   0};
+static const Colour COLOUR_RED          = {255,   0,   0};
+static const Colour COLOUR_GREEN        = {  0, 255,   0};
+static const Colour COLOUR_SKY          = {128, 128, 255};
+static const Colour COLOUR_CYAN         = {  0, 255, 255};
+static const Colour COLOUR_MENU_GREEN   = { 32, 128,  32};
+static const Colour COLOUR_BUTTON_GREEN = { 16, 96,  16};
 
 static Image image;
 static FT_Library ft_library;
@@ -149,8 +151,8 @@ void draw_colour_over (Image *i, uint32_t x, uint32_t y, Colour c, uint8_t a)
     if (p->a) /* Opaque target */
     {
         p->r = (1.0 - a_float) * p->r + a_float * c.r;
-        p->g = (1.0 - a_float) * p->r + a_float * c.g;
-        p->b = (1.0 - a_float) * p->r + a_float * c.b;
+        p->g = (1.0 - a_float) * p->g + a_float * c.g;
+        p->b = (1.0 - a_float) * p->b + a_float * c.b;
     }
     else /* Transparent target */
     {
@@ -170,15 +172,16 @@ void transparent_set (Image *i, uint32_t x, uint32_t y)
     p->a = 0;
 }
 
-uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offset, uint32_t y_offset,
-                     FT_Face ft_face, uint32_t font_size, Colour colour, uint32_t c, bool mirror)
+/* To get the bottom of characters lining up, we take the y-offset to be the bottom, not the top, of the glyph */
+uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offset, uint32_t y_baseline,
+                     FT_Face ft_face, uint32_t point, Colour colour, uint32_t c, bool mirror)
 {
     /* Possibly useful fields:
      * glyph->bitmap_left,
      * glyph->bitmap_top (distance from baseline to top of character,
      * Docs reccomend treating the bitmap as an alpha channel and blending with gamma correction */
     /* Set the font size */
-    if (FT_Set_Char_Size (ft_face, 0, font_size << 6,
+    if (FT_Set_Char_Size (ft_face, 0, point << 6,
                                   96, 96    /* 96 dpi */))
     {
         fprintf (stderr, "Error: Unable to set font size.\n");
@@ -198,13 +201,13 @@ uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offse
             uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
             /* Top left */
             draw_colour_over (&image, card_col * CARD_WIDTH + x + x_offset,
-                                      card_row * CARD_HEIGHT + y + y_offset,
+                                      card_row * CARD_HEIGHT + y + y_baseline - ft_face->glyph->bitmap_top,
                                       colour, ft_face->glyph->bitmap.buffer[pixel_index]);
             if (mirror)
             {
                 /* Bottom right */
                 draw_colour_over (&image, card_col * CARD_WIDTH  + (CARD_WIDTH  - (x + x_offset)),
-                                          card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_offset)),
+                                          card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_baseline - ft_face->glyph->bitmap_top)),
                                           colour, ft_face->glyph->bitmap.buffer[pixel_index]);
             }
         }
@@ -213,14 +216,14 @@ uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offse
     return ft_face->glyph->advance.x >> 6; /* Advance is stored in 1/64th pixels */
 }
 
-uint32_t draw_card_glyph_centre (uint32_t card_col, uint32_t card_row, FT_Face ft_face, uint32_t font_size, Colour colour, uint32_t c)
+uint32_t draw_card_glyph_centre (uint32_t card_col, uint32_t card_row, FT_Face ft_face, uint32_t point, Colour colour, uint32_t c)
 {
     /* Possibly useful fields:
      * glyph->bitmap_left,
      * glyph->bitmap_top (distance from baseline to top of character,
      * Docs reccomend treating the bitmap as an alpha channel and blending with gamma correction */
     /* Set the font size */
-    if (FT_Set_Char_Size (ft_face, 0, font_size << 6,
+    if (FT_Set_Char_Size (ft_face, 0, point << 6,
                                   96, 96    /* 96 dpi */))
     {
         fprintf (stderr, "Error: Unable to set font size.\n");
@@ -264,32 +267,113 @@ void draw_card_background (uint32_t card_col, uint32_t card_row)
 
 void draw_card_outline (uint32_t card_col, uint32_t card_row)
 {
-            /* Top and bottom */
-            for (uint32_t x = 2; x < CARD_WIDTH - 2; x++)
-            {
-                colour_set (&image, x + card_col * CARD_WIDTH,
-                                    0 + card_row * CARD_HEIGHT, COLOUR_BLACK);
-                colour_set (&image, x + card_col * CARD_WIDTH,
-                                   63 + card_row * CARD_HEIGHT, COLOUR_BLACK);
-            }
-            /* Left and right */
-            for (uint32_t y = 2; y < CARD_HEIGHT - 2; y++)
-            {
-                colour_set (&image, 0 + card_col * CARD_WIDTH,
-                                    y + card_row * CARD_HEIGHT, COLOUR_BLACK);
-                colour_set (&image,39 + card_col * CARD_WIDTH,
-                                    y + card_row * CARD_HEIGHT, COLOUR_BLACK);
-            }
-            /* Curved corner */
-            colour_set (&image, 1 + card_col * CARD_WIDTH,
-                                1 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+    /* Top and bottom */
+    for (uint32_t x = 2; x < CARD_WIDTH - 2; x++)
+    {
+        colour_set (&image, x + card_col * CARD_WIDTH,
+                            0 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+        colour_set (&image, x + card_col * CARD_WIDTH,
+                           63 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+    }
+    /* Left and right */
+    for (uint32_t y = 2; y < CARD_HEIGHT - 2; y++)
+    {
+        colour_set (&image, 0 + card_col * CARD_WIDTH,
+                            y + card_row * CARD_HEIGHT, COLOUR_BLACK);
+        colour_set (&image,39 + card_col * CARD_WIDTH,
+                            y + card_row * CARD_HEIGHT, COLOUR_BLACK);
+    }
+    /* Curved corner */
+    colour_set (&image, 1 + card_col * CARD_WIDTH,
+                        1 + card_row * CARD_HEIGHT, COLOUR_BLACK);
 
-            colour_set (&image, 1 + card_col * CARD_WIDTH,
-                                CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
-            colour_set (&image, CARD_WIDTH - 2 + card_col * CARD_WIDTH,
-                                1 + card_row * CARD_HEIGHT, COLOUR_BLACK);
-            colour_set (&image, CARD_WIDTH - 2 + card_col * CARD_WIDTH,
-                                CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+    colour_set (&image, 1 + card_col * CARD_WIDTH,
+                        CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+    colour_set (&image, CARD_WIDTH - 2 + card_col * CARD_WIDTH,
+                        1 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+    colour_set (&image, CARD_WIDTH - 2 + card_col * CARD_WIDTH,
+                        CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
+}
+
+void draw_button_outline (uint32_t card_col, uint32_t card_row,
+                          uint32_t x_offset, uint32_t y_offset,
+                          uint32_t width,    uint32_t height)
+{
+    /* Top and bottom */
+    for (uint32_t x = 0; x < width; x++)
+    {
+        colour_set (&image, x + card_col * CARD_WIDTH,
+                            0 + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
+        colour_set (&image, x + card_col * CARD_WIDTH,
+                            height - 1 + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
+    }
+    /* Left and right */
+    for (uint32_t y = 0; y < height; y++)
+    {
+        colour_set (&image, 0 + card_col * CARD_WIDTH,
+                            y + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
+        colour_set (&image, width - 1 + card_col * CARD_WIDTH,
+                            y + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
+    }
+}
+
+uint32_t string_width (char *string, uint32_t point)
+{
+    uint32_t width = 0;
+
+    for (char *c = string; *c != '\0'; c++)
+    {
+        if (FT_Set_Char_Size (ft_face_text, 0, point << 6,
+                                      96, 96    /* 96 dpi */))
+        {
+            fprintf (stderr, "Error: Unable to set font size.\n");
+            return EXIT_FAILURE;
+        }
+
+        if (FT_Load_Char (ft_face_text, c, FT_LOAD_RENDER))
+        {
+            fprintf (stderr, "Error: Unable to set load glyph.\n");
+            return EXIT_FAILURE;
+        }
+
+        if (c[1] == '\0')
+        {
+            /* If this is the last character, just add the width */
+            width += ft_face_text->glyph->bitmap.width;
+        }
+        else
+        {
+            /* Otherwise add the advance */
+            width += ft_face_text->glyph->advance.x >> 6;
+        }
+    }
+
+    return width;
+}
+
+void draw_string (uint32_t card_col, uint32_t card_row,
+                  uint32_t x_offset, uint32_t y_baseline,
+                  char *string, uint32_t point, Colour colour)
+{
+    for (char *c = string; *c != '\0'; c++)
+    {
+        x_offset += draw_card_glyph (card_col, card_row, x_offset, y_baseline, /* Position */
+                                     ft_face_text, point, colour, /* Font */
+                                     *c, false); /* Glyph + mirror */
+    }
+}
+
+/* TODO It would be nice to centre these */
+void draw_string_outlined (uint32_t card_col, uint32_t card_row,
+                           uint32_t x_offset, uint32_t y_baseline,
+                           uint32_t width, char *string, uint32_t point, Colour colour)
+{
+    uint32_t offset = (width - string_width (string, point)) / 2;
+    draw_string (card_col, card_row, x_offset + offset - 1, y_baseline - 1, string, point, COLOUR_BLACK);
+    draw_string (card_col, card_row, x_offset + offset - 1, y_baseline + 1, string, point, COLOUR_BLACK);
+    draw_string (card_col, card_row, x_offset + offset + 1, y_baseline - 1, string, point, COLOUR_BLACK);
+    draw_string (card_col, card_row, x_offset + offset + 1, y_baseline + 1, string, point, COLOUR_BLACK);
+    draw_string (card_col, card_row, x_offset + offset,     y_baseline,     string, point, colour);
 }
 
 int main (int argc, char**argv)
@@ -351,7 +435,7 @@ int main (int argc, char**argv)
 
                 for (char *c = card_values[card_col]; *c != '\0'; c++)
                 {
-                    escapement += draw_card_glyph (card_col, card_row, TEXT_LEFT + escapement, TEXT_TOP, /* Position */
+                    escapement += draw_card_glyph (card_col, card_row, TEXT_LEFT + escapement, TEXT_BASELINE, /* Position */
                                                    ft_face_text, TEXT_POINT, card_row < 2 ? COLOUR_RED : COLOUR_BLACK, /* Font */
                                                    *c, true); /* Glyph + mirror */
                 }
@@ -359,7 +443,7 @@ int main (int argc, char**argv)
             /* Card symbols - TODO: Get these to line up with the number, or beside the number */
             if (card_col < sizeof(card_values) / sizeof(card_values[0]))
             {
-                 draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_TOP + 10, /* Position */
+                 draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_BASELINE + 10, /* Position */
                                   ft_face_text, SUIT_POINT, card_row < 2 ? COLOUR_RED : COLOUR_BLACK, /* font */
                                   card_suits[card_row], true); /* Glyph + mirror */
             }
@@ -412,6 +496,72 @@ int main (int argc, char**argv)
         colour_set (&image, CARD_WIDTH - 5 + card_col * CARD_WIDTH, 4 + card_row * CARD_HEIGHT, COLOUR_WHITE);
         colour_set (&image, 4 + card_col * CARD_WIDTH, CARD_HEIGHT - 5 + card_row * CARD_HEIGHT, COLOUR_WHITE);
         colour_set (&image, CARD_WIDTH - 5 + card_col * CARD_WIDTH, CARD_HEIGHT - 5 + card_row * CARD_HEIGHT, COLOUR_WHITE);
+    }
+    /* 4: Unused */
+    /* 5: Solid green */
+    {
+        uint32_t card_col = 14;
+        uint32_t card_row = 0;
+
+        for (uint32_t x = 0; x < CARD_WIDTH; x++)
+        {
+            for (uint32_t y = 0; y < CARD_HEIGHT; y++)
+            {
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, COLOUR_MENU_GREEN);
+            }
+        }
+    }
+    /* 6: Solid white */
+    {
+        uint32_t card_col = 14;
+        uint32_t card_row = 1;
+
+        for (uint32_t x = 0; x < CARD_WIDTH; x++)
+        {
+            for (uint32_t y = 0; y < CARD_HEIGHT; y++)
+            {
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, COLOUR_WHITE);
+            }
+        }
+    }
+
+    /* After the column of solid colours, some GUI buttons */
+    /* Make the buttons four card-widths wide, and half a card-width tall */
+    {
+        uint32_t card_col = 15;
+        uint32_t card_row = 0;
+        uint32_t baseline = 22;
+
+        /* Darker green background */
+        for (uint32_t x = 0; x < CARD_WIDTH * 4; x++)
+        {
+            for (uint32_t y = 0; y < CARD_HEIGHT * 2; y++)
+            {
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, COLOUR_BUTTON_GREEN);
+            }
+        }
+
+        /* TODO: Rather than varients of each text, perhaps just a semi-transparent overlay
+         *       for disabled (closer to background colour) and activate (darken)? */
+
+        /* Outlines */
+        draw_button_outline (card_col, card_row, 0, 0,  CARD_WIDTH * 4, CARD_HEIGHT / 2);
+        draw_button_outline (card_col, card_row, 0, 32, CARD_WIDTH * 4, CARD_HEIGHT / 2);
+        draw_button_outline (card_col, card_row, 0, 64, CARD_WIDTH * 4, CARD_HEIGHT / 2);
+        draw_button_outline (card_col, card_row, 0, 96, CARD_WIDTH * 4, CARD_HEIGHT / 2);
+
+        /* Text */
+        draw_string_outlined (card_col, card_row, 5, 32 * 0 + baseline,
+                     CARD_WIDTH * 4, "New Game", 12, COLOUR_WHITE);
+        draw_string_outlined (card_col, card_row, 5, 32 * 1 + baseline,
+                     CARD_WIDTH * 4, "Resume", 12, COLOUR_WHITE);
+        draw_string_outlined (card_col, card_row, 5, 32 * 2 + baseline,
+                     CARD_WIDTH * 4, "Options", 12, COLOUR_WHITE);
+        draw_string_outlined (card_col, card_row, 5, 32 * 3 + baseline,
+                     CARD_WIDTH * 4, "Quit", 12, COLOUR_WHITE);
     }
 
     export (&image, "cards.png");

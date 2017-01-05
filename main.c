@@ -143,6 +143,12 @@ void colour_set (Image *i, uint32_t x, uint32_t y, Colour c)
     p->a = 255;
 }
 
+void alpha_set (Image *i, uint32_t x, uint32_t y, uint8_t a)
+{
+    Pixel *p = pixel_get (i, x, y);
+    p->a = a;
+}
+
 /* Assumes the existing pixel has alpha of either 0 or 255 */
 void draw_colour_over (Image *i, uint32_t x, uint32_t y, Colour c, uint8_t a)
 {
@@ -295,24 +301,34 @@ void draw_card_outline (uint32_t card_col, uint32_t card_row)
                         CARD_HEIGHT - 2 + card_row * CARD_HEIGHT, COLOUR_BLACK);
 }
 
-void draw_button_outline (uint32_t card_col, uint32_t card_row,
+void draw_blank_button (uint32_t card_col, uint32_t card_row,
                           uint32_t x_offset, uint32_t y_offset,
                           uint32_t width,    uint32_t height)
 {
-    /* Top and bottom */
-    for (uint32_t x = 0; x < width; x++)
+    /* Darker green background */
+    for (uint32_t x = 2; x < width - 2; x++)
     {
-        colour_set (&image, x + card_col * CARD_WIDTH,
-                            0 + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
-        colour_set (&image, x + card_col * CARD_WIDTH,
-                            height - 1 + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
+        for (uint32_t y = 2; y < height - 2; y++)
+        {
+            colour_set (&image, x + card_col * CARD_WIDTH + x_offset,
+                                y + card_row * CARD_HEIGHT + y_offset, COLOUR_BUTTON_GREEN);
+        }
+    }
+
+    /* Top and bottom */
+    for (uint32_t x = 2; x < width - 2; x++)
+    {
+        colour_set (&image, x + card_col * CARD_WIDTH + x_offset,
+                            1 + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
+        colour_set (&image, x + card_col * CARD_WIDTH + x_offset,
+                            height - 2 + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
     }
     /* Left and right */
-    for (uint32_t y = 0; y < height; y++)
+    for (uint32_t y = 2; y < height - 2; y++)
     {
-        colour_set (&image, 0 + card_col * CARD_WIDTH,
+        colour_set (&image, 1 + card_col * CARD_WIDTH + x_offset,
                             y + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
-        colour_set (&image, width - 1 + card_col * CARD_WIDTH,
+        colour_set (&image, width - 2 + card_col * CARD_WIDTH + x_offset,
                             y + card_row * CARD_HEIGHT + y_offset, COLOUR_BLACK);
     }
 }
@@ -330,7 +346,7 @@ uint32_t string_width (char *string, uint32_t point)
             return EXIT_FAILURE;
         }
 
-        if (FT_Load_Char (ft_face_text, c, FT_LOAD_RENDER))
+        if (FT_Load_Char (ft_face_text, *c, FT_LOAD_RENDER))
         {
             fprintf (stderr, "Error: Unable to set load glyph.\n");
             return EXIT_FAILURE;
@@ -533,35 +549,63 @@ int main (int argc, char**argv)
         uint32_t card_col = 15;
         uint32_t card_row = 0;
         uint32_t baseline = 22;
-
-        /* Darker green background */
-        for (uint32_t x = 0; x < CARD_WIDTH * 4; x++)
-        {
-            for (uint32_t y = 0; y < CARD_HEIGHT * 2; y++)
-            {
-                colour_set (&image, x + card_col * CARD_WIDTH,
-                                    y + card_row * CARD_HEIGHT, COLOUR_BUTTON_GREEN);
-            }
-        }
+        uint32_t width    = CARD_WIDTH * 4;
+        uint32_t height   = CARD_HEIGHT / 2;
 
         /* TODO: Rather than varients of each text, perhaps just a semi-transparent overlay
          *       for disabled (closer to background colour) and activate (darken)? */
 
         /* Outlines */
-        draw_button_outline (card_col, card_row, 0, 0,  CARD_WIDTH * 4, CARD_HEIGHT / 2);
-        draw_button_outline (card_col, card_row, 0, 32, CARD_WIDTH * 4, CARD_HEIGHT / 2);
-        draw_button_outline (card_col, card_row, 0, 64, CARD_WIDTH * 4, CARD_HEIGHT / 2);
-        draw_button_outline (card_col, card_row, 0, 96, CARD_WIDTH * 4, CARD_HEIGHT / 2);
+        draw_blank_button (card_col, card_row, 0, 0,  width, height);
+        draw_blank_button (card_col, card_row, 0, 32, width, height);
+        draw_blank_button (card_col, card_row, 0, 64, width, height);
+        draw_blank_button (card_col, card_row, 0, 96, width, height);
 
-        /* Text */
+        /* Four text buttons */
         draw_string_outlined (card_col, card_row, 5, 32 * 0 + baseline,
-                     CARD_WIDTH * 4, "New Game", 12, COLOUR_WHITE);
+                     width, "New Game", 12, COLOUR_WHITE);
         draw_string_outlined (card_col, card_row, 5, 32 * 1 + baseline,
-                     CARD_WIDTH * 4, "Resume", 12, COLOUR_WHITE);
+                     width, "Resume", 12, COLOUR_WHITE);
         draw_string_outlined (card_col, card_row, 5, 32 * 2 + baseline,
-                     CARD_WIDTH * 4, "Options", 12, COLOUR_WHITE);
+                     width, "Options", 12, COLOUR_WHITE);
         draw_string_outlined (card_col, card_row, 5, 32 * 3 + baseline,
-                     CARD_WIDTH * 4, "Quit", 12, COLOUR_WHITE);
+                     width, "Quit", 12, COLOUR_WHITE);
+
+        /* Transparent menu-green for "disabled" */
+        card_row = 2;
+        for (uint32_t x = 1; x < width - 1; x++)
+        {
+            for (uint32_t y = 1; y < height - 1; y++)
+            {
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, COLOUR_MENU_GREEN);
+                alpha_set  (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT, 192);
+            }
+        }
+        /* Corner fixup */
+        transparent_set (&image, 1 + card_col * CARD_WIDTH,         1 + card_row * CARD_HEIGHT);
+        transparent_set (&image, 1 + card_col * CARD_WIDTH,         height - 2 + card_row * CARD_HEIGHT);
+        transparent_set (&image, width - 2 + card_col * CARD_WIDTH, 1 + card_row * CARD_HEIGHT);
+        transparent_set (&image, width - 2 + card_col * CARD_WIDTH, height - 2 + card_row * CARD_HEIGHT);
+
+        /* Transparent black for "pressing" */
+        for (uint32_t x = 1; x < width - 1; x++)
+        {
+            for (uint32_t y = 1; y < height - 1; y++)
+            {
+                colour_set (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT + (CARD_HEIGHT / 2), COLOUR_BLACK);
+                alpha_set  (&image, x + card_col * CARD_WIDTH,
+                                    y + card_row * CARD_HEIGHT + (CARD_HEIGHT / 2), 48);
+            }
+        }
+        /* Corner fixup */
+        transparent_set (&image, 1 + card_col * CARD_WIDTH,         height + 1 + card_row * CARD_HEIGHT);
+        transparent_set (&image, 1 + card_col * CARD_WIDTH,         height + height - 2 + card_row * CARD_HEIGHT);
+        transparent_set (&image, width - 2 + card_col * CARD_WIDTH, height + 1 + card_row * CARD_HEIGHT);
+        transparent_set (&image, width - 2 + card_col * CARD_WIDTH, height + height - 2 + card_row * CARD_HEIGHT);
+
     }
 
     export (&image, "cards.png");

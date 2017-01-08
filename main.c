@@ -10,11 +10,27 @@
 
 #define CARD_WIDTH  40
 #define CARD_HEIGHT 64
-#define TEXT_BASELINE 12
-#define TEXT_LEFT 4
 
+/* Text Alignment */
+#define TEXT_LEFT 4
+#define TEXT_BASELINE 12
+#define BODY_BASELINE 20
+#define BODY_LEFT     10
+
+/* Font sizes */
 #define TEXT_POINT 8
-#define SUIT_POINT 9
+#define CORNER_SUIT_POINT 9
+#define REGULAR_SUIT_POINT 12
+#define ACE_SUIT_POINT 24
+
+/* Mirror directions */
+#define MIRROR_NONE   0
+#define MIRROR_ACROSS 1
+#define MIRROR_DOWN   2
+#define MIRROR_DIAG   4
+
+#define GLYPH_CENTRE 0xffffffff
+
 
 typedef struct Colour_t {
     uint8_t r;
@@ -48,8 +64,9 @@ static Image image;
 static FT_Library ft_library;
 static FT_Face ft_face_text;
 static FT_Face ft_face_symbol;
-static char *card_values[] = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
-static uint32_t card_suits[]  = {0x2665 /* ♥ */, 0x2666 /* ♦ */, 0x2663 /* ♣ */, 0x2660 /* ♠*/};
+static const char *card_values[] = {"A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"};
+static const uint32_t card_suits[]  = {0x2665 /* ♥ */, 0x2666 /* ♦ */, 0x2663 /* ♣ */, 0x2660 /* ♠*/};
+static Colour card_colours[4] = {};
 
 
 static Pixel *pixel_get (Image *i, uint32_t x, uint32_t y)
@@ -180,7 +197,7 @@ void transparent_set (Image *i, uint32_t x, uint32_t y)
 
 /* To get the bottom of characters lining up, we take the y-offset to be the bottom, not the top, of the glyph */
 uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offset, uint32_t y_baseline,
-                     FT_Face ft_face, uint32_t point, Colour colour, uint32_t c, bool mirror)
+                     FT_Face ft_face, uint32_t point, Colour colour, uint32_t c, uint32_t mirror)
 {
     /* Possibly useful fields:
      * glyph->bitmap_left,
@@ -200,18 +217,41 @@ uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offse
         return EXIT_FAILURE;
     }
 
+    if (x_offset == GLYPH_CENTRE)
+    {
+        x_offset = (CARD_WIDTH - ft_face->glyph->bitmap.width) / 2;
+    }
+
+    if (y_baseline == GLYPH_CENTRE)
+    {
+        /* An extra bitmap_top is added because we remove it later */
+        y_baseline = (CARD_HEIGHT - ft_face->glyph->bitmap.rows) / 2 + ft_face->glyph->bitmap_top;
+    }
+
     for (uint32_t x = 0; x < ft_face->glyph->bitmap.width; x++)
     {
         for (uint32_t y = 0; y < ft_face->glyph->bitmap.rows; y++)
         {
             uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
-            /* Top left */
+            /* Base glyph */
             draw_colour_over (&image, card_col * CARD_WIDTH + x + x_offset,
                                       card_row * CARD_HEIGHT + y + y_baseline - ft_face->glyph->bitmap_top,
                                       colour, ft_face->glyph->bitmap.buffer[pixel_index]);
-            if (mirror)
+            /* Mirrors of glpyh */
+            if (mirror & MIRROR_ACROSS)
             {
-                /* Bottom right */
+                draw_colour_over (&image, card_col * CARD_WIDTH  + (CARD_WIDTH  - (x + x_offset)),
+                                          card_row * CARD_HEIGHT + y + y_baseline - ft_face->glyph->bitmap_top,
+                                          colour, ft_face->glyph->bitmap.buffer[pixel_index]);
+            }
+            if (mirror & MIRROR_DOWN)
+            {
+                draw_colour_over (&image, card_col * CARD_WIDTH + x + x_offset,
+                                          card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_baseline - ft_face->glyph->bitmap_top)),
+                                          colour, ft_face->glyph->bitmap.buffer[pixel_index]);
+            }
+            if (mirror & MIRROR_DIAG)
+            {
                 draw_colour_over (&image, card_col * CARD_WIDTH  + (CARD_WIDTH  - (x + x_offset)),
                                           card_row * CARD_HEIGHT + (CARD_HEIGHT - (y + y_baseline - ft_face->glyph->bitmap_top)),
                                           colour, ft_face->glyph->bitmap.buffer[pixel_index]);
@@ -222,43 +262,6 @@ uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offse
     return ft_face->glyph->advance.x >> 6; /* Advance is stored in 1/64th pixels */
 }
 
-uint32_t draw_card_glyph_centre (uint32_t card_col, uint32_t card_row, FT_Face ft_face, uint32_t point, Colour colour, uint32_t c)
-{
-    /* Possibly useful fields:
-     * glyph->bitmap_left,
-     * glyph->bitmap_top (distance from baseline to top of character,
-     * Docs reccomend treating the bitmap as an alpha channel and blending with gamma correction */
-    /* Set the font size */
-    if (FT_Set_Char_Size (ft_face, 0, point << 6,
-                                  96, 96    /* 96 dpi */))
-    {
-        fprintf (stderr, "Error: Unable to set font size.\n");
-        return EXIT_FAILURE;
-    }
-
-    if (FT_Load_Char (ft_face, c, FT_LOAD_RENDER))
-    {
-        fprintf (stderr, "Error: Unable to set load glyph.\n");
-        return EXIT_FAILURE;
-    }
-
-    uint32_t x_offset = (CARD_WIDTH - ft_face->glyph->bitmap.width) / 2;
-    uint32_t y_offset = (CARD_HEIGHT - ft_face->glyph->bitmap.rows) / 2;
-
-    /* TODO: Common blit function */
-    for (uint32_t x = 0; x < ft_face->glyph->bitmap.width; x++)
-    {
-        for (uint32_t y = 0; y < ft_face->glyph->bitmap.rows; y++)
-        {
-            uint32_t pixel_index = x + y * ft_face->glyph->bitmap.pitch;
-            draw_colour_over (&image, card_col * CARD_WIDTH + x + x_offset,
-                                      card_row * CARD_HEIGHT + y + y_offset,
-                                      colour, ft_face->glyph->bitmap.buffer[pixel_index]);
-        }
-    }
-
-    return ft_face->glyph->advance.x >> 6; /* Advance is stored in 1/64th pixels */
-}
 void draw_card_background (uint32_t card_col, uint32_t card_row)
 {
     for (uint32_t x = 1; x < CARD_WIDTH - 1; x++)
@@ -375,7 +378,7 @@ void draw_string (uint32_t card_col, uint32_t card_row,
     {
         x_offset += draw_card_glyph (card_col, card_row, x_offset, y_baseline, /* Position */
                                      ft_face_text, point, colour, /* Font */
-                                     *c, false); /* Glyph + mirror */
+                                     *c, MIRROR_NONE);
     }
 }
 
@@ -394,7 +397,9 @@ void draw_string_outlined (uint32_t card_col, uint32_t card_row,
 
 int main (int argc, char**argv)
 {
-
+    /* Fixup statics */
+    card_colours[0] = card_colours[1] = COLOUR_RED;
+    card_colours[2] = card_colours[3] = COLOUR_BLACK;
 
     /* Initialize FreeType2 */
     if (FT_Init_FreeType (&ft_library))
@@ -440,29 +445,83 @@ int main (int argc, char**argv)
     {
         for (uint32_t card_row= 0; card_row < 4; card_row++)
         {
+            uint32_t suit = card_suits[card_row];
+            Colour colour = card_colours[card_row];
+
             draw_card_background (card_col, card_row);
 
             draw_card_outline (card_col, card_row);
 
-            /* A letter or number in the top corner */
-            if (card_col < sizeof(card_values) / sizeof(card_values[0]))
-            {
-                uint32_t escapement = 0;
+            /* Top-left / bottom-right corner */
+            uint32_t escapement = 0;
 
-                for (char *c = card_values[card_col]; *c != '\0'; c++)
-                {
-                    escapement += draw_card_glyph (card_col, card_row, TEXT_LEFT + escapement, TEXT_BASELINE, /* Position */
-                                                   ft_face_text, TEXT_POINT, card_row < 2 ? COLOUR_RED : COLOUR_BLACK, /* Font */
-                                                   *c, true); /* Glyph + mirror */
-                }
-            }
-            /* Card symbols - TODO: Get these to line up with the number, or beside the number */
-            if (card_col < sizeof(card_values) / sizeof(card_values[0]))
+            for (const char *c = card_values[card_col]; *c != '\0'; c++)
             {
-                 draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_BASELINE + 10, /* Position */
-                                  ft_face_text, SUIT_POINT, card_row < 2 ? COLOUR_RED : COLOUR_BLACK, /* font */
-                                  card_suits[card_row], true); /* Glyph + mirror */
+                escapement += draw_card_glyph (card_col, card_row, TEXT_LEFT + escapement, TEXT_BASELINE, /* Position */
+                                               ft_face_text, TEXT_POINT, colour, /* Font */
+                                               *c, MIRROR_DIAG);
             }
+             draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_BASELINE + 10, /* Position */
+                              ft_face_text, CORNER_SUIT_POINT, colour, /* font */
+                              suit, MIRROR_DIAG);
+
+             /* Body of card */
+             switch (1 + card_col)
+             {
+                case 1:
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, GLYPH_CENTRE,
+                                     ft_face_text, ACE_SUIT_POINT, colour, suit, MIRROR_NONE);
+                    break;
+
+                case 2:
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN);
+                    break;
+
+                case 3:
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN);
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, GLYPH_CENTRE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_NONE);
+                    break;
+
+                case 4:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    break;
+
+                case 5:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, GLYPH_CENTRE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_NONE);
+                    break;
+
+                case 6:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, GLYPH_CENTRE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_ACROSS);
+                    break;
+
+                case 7:
+                    break;
+                case 8:
+                    break;
+                case 9:
+                    break;
+                case 10:
+                    break;
+
+                /* Picture cards just need a box */
+                case 11:
+                case 12:
+                case 13:
+                    break;
+
+                default:
+                    break;
+             }
 
         }
     }
@@ -479,7 +538,7 @@ int main (int argc, char**argv)
         uint32_t card_col = 13;
         uint32_t card_row = 1;
         draw_card_outline (card_col, card_row);
-        draw_card_glyph_centre (card_col, card_row, ft_face_symbol, 24, COLOUR_GREEN, 0x21b6 /* refresh symbol */);
+        draw_card_glyph (card_col, card_row, GLYPH_CENTRE, GLYPH_CENTRE, ft_face_symbol, 24, COLOUR_GREEN, 0x21b6 /* refresh symbol */, MIRROR_NONE);
     }
     /* 3: The back of a card */
     {

@@ -12,15 +12,15 @@
 #define CARD_HEIGHT 64
 
 /* Text Alignment */
-#define TEXT_LEFT 4
-#define TEXT_BASELINE 12
-#define BODY_BASELINE 20
-#define BODY_LEFT     10
+#define TEXT_LEFT 3
+#define TEXT_BASELINE 11
+#define BODY_BASELINE 21
+#define BODY_LEFT     8
 
 /* Font sizes */
-#define TEXT_POINT 8
-#define CORNER_SUIT_POINT 9
-#define REGULAR_SUIT_POINT 12
+#define TEXT_POINT 7
+#define CORNER_SUIT_POINT 8
+#define REGULAR_SUIT_POINT 10
 #define ACE_SUIT_POINT 24
 
 /* Mirror directions */
@@ -219,7 +219,7 @@ uint32_t draw_card_glyph (uint32_t card_col, uint32_t card_row, uint32_t x_offse
 
     if (x_offset == GLYPH_CENTRE)
     {
-        x_offset = (CARD_WIDTH - ft_face->glyph->bitmap.width) / 2;
+        x_offset = (CARD_WIDTH + 1 - ft_face->glyph->bitmap.width) / 2;
     }
 
     if (y_baseline == GLYPH_CENTRE)
@@ -455,15 +455,18 @@ int main (int argc, char**argv)
             /* Top-left / bottom-right corner */
             uint32_t escapement = 0;
 
+#if 0
+            escapement = draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_BASELINE, /* Position */
+                              ft_face_text, CORNER_SUIT_POINT, colour, /* font */
+                              suit, MIRROR_DIAG) + 1;
+#endif
+
             for (const char *c = card_values[card_col]; *c != '\0'; c++)
             {
                 escapement += draw_card_glyph (card_col, card_row, TEXT_LEFT + escapement, TEXT_BASELINE, /* Position */
                                                ft_face_text, TEXT_POINT, colour, /* Font */
                                                *c, MIRROR_DIAG);
             }
-             draw_card_glyph (card_col, card_row, TEXT_LEFT, TEXT_BASELINE + 10, /* Position */
-                              ft_face_text, CORNER_SUIT_POINT, colour, /* font */
-                              suit, MIRROR_DIAG);
 
              /* Body of card */
              switch (1 + card_col)
@@ -505,12 +508,36 @@ int main (int argc, char**argv)
                     break;
 
                 case 7:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, GLYPH_CENTRE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_ACROSS);
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, BODY_BASELINE + 8,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_NONE);
                     break;
                 case 8:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, GLYPH_CENTRE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_ACROSS);
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, BODY_BASELINE + 8,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN);
                     break;
                 case 9:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE + 10,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, GLYPH_CENTRE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_NONE);
                     break;
                 case 10:
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, BODY_LEFT, BODY_BASELINE + 10,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN | MIRROR_ACROSS | MIRROR_DIAG);
+                    draw_card_glyph (card_col, card_row, GLYPH_CENTRE, BODY_BASELINE + 5,
+                                     ft_face_text, REGULAR_SUIT_POINT, colour, suit, MIRROR_DOWN);
                     break;
 
                 /* Picture cards just need a box */
